@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom">
+  <title>ArXiv Query</title>
+  <entry>
+    <id>http://arxiv.org/abs/2611.01234v2</id>
+    <published>__RECENT__</published>
+    <title>AeroGS: Gaussian Splatting for
+      Large-Scale UAV Scenes</title>
+    <summary>We present AeroGS, a 3DGS method for drone imagery.</summary>
+    <author><name>A. Author</name></author>
+    <author><name>B. Author</name></author>
+    <arxiv:comment>Code: https://github.com/x/aerogs</arxiv:comment>
+    <arxiv:primary_category term="cs.CV"/>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.05555v1</id>
+    <published>__RECENT__</published>
+    <title>GaussAvatar: Animatable Human Avatars</title>
+    <summary>Gaussian splatting avatars for humans.</summary>
+    <author><name>C. Author</name></author>
+    <arxiv:primary_category term="cs.GR"/>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2601.00001v1</id>
+    <published>2026-01-01T00:00:00Z</published>
+    <title>Old paper</title>
+    <summary>Gaussian splatting old.</summary>
+  </entry>
+</feed>
