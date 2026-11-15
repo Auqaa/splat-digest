@@ -6,7 +6,8 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 
-from ..models import Item, is_on_topic, make_key
+from ..models import COMMUNITY, Item, is_on_topic, make_key
+from .base import Ctx
 
 log = logging.getLogger(__name__)
 
@@ -28,20 +29,22 @@ def parse(hits: list[dict]) -> list[Item]:
         ts = h.get("created_at_i")
         items.append(
             Item(
-                key=make_key(url, f"hn:{oid}"),
+                key=make_key(url, f"hn:{oid}", text),
                 title=title,
                 url=url or hn_url,
                 abstract=text[:2000],
                 published=datetime.fromtimestamp(ts, tz=timezone.utc) if ts else None,
                 sources=["hn"],
+                kind=COMMUNITY,
                 extra={"hn_url": hn_url, "hn_points": h.get("points"), "hn_comments": h.get("num_comments")},
             )
         )
     return items
 
 
-async def fetch(client: httpx.AsyncClient, lookback_days: int) -> list[Item]:
-    since = int((datetime.now(timezone.utc) - timedelta(days=lookback_days)).timestamp())
+async def fetch(ctx: Ctx) -> list[Item]:
+    client = ctx.client
+    since = int(ctx.since().timestamp())
     out: dict[str, Item] = {}
     for q in QUERIES:
         params = {

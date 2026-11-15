@@ -7,6 +7,7 @@ from datetime import date, datetime, timedelta, timezone
 import httpx
 
 from ..models import Item, is_on_topic
+from .base import Ctx
 
 log = logging.getLogger(__name__)
 
@@ -49,7 +50,8 @@ def parse(entries: list[dict]) -> list[Item]:
     return items
 
 
-async def fetch(client: httpx.AsyncClient, lookback_days: int) -> list[Item]:
+async def fetch(ctx: Ctx) -> list[Item]:
+    client, lookback_days = ctx.client, ctx.cfg.lookback_days
     today = datetime.now(timezone.utc).date()
     out: dict[str, Item] = {}
     for d in range(lookback_days + 1):

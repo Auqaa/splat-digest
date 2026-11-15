@@ -7,7 +7,8 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 
-from ..models import Item, arxiv_id_from
+from ..models import PAPER, Item, arxiv_id_from
+from .base import Ctx
 
 log = logging.getLogger(__name__)
 
@@ -50,8 +51,9 @@ def parse_feed(xml_text: str, since: datetime) -> list[Item]:
     return items
 
 
-async def fetch(client: httpx.AsyncClient, lookback_days: int, max_results: int = 200) -> list[Item]:
-    since = datetime.now(timezone.utc) - timedelta(days=lookback_days)
+async def fetch(ctx: Ctx, max_results: int = 200) -> list[Item]:
+    client = ctx.client
+    since = ctx.since()
     params = {
         "search_query": QUERY,
         "sortBy": "submittedDate",
@@ -66,3 +68,15 @@ async def fetch(client: httpx.AsyncClient, lookback_days: int, max_results: int 
     if len(items) >= max_results:
         log.warning("arXiv: hit max_results=%d, some papers may be missing", max_results)
     return items
+
+
+async def fetch_by_ids(client: httpx.AsyncClient, ids: list[str]) -> list[Item]:
+    """Fetch metadata for specific arXiv IDs (used by the awesome-list watcher)."""
+    out: list[Item] = []
+    for i in range(0, len(ids), 50):
+        chunk = ids[i : i + 50]
+        r = await client.get(API_URL, params={"id_list": ",".join(chunk), "max_results": len(chunk)}, timeout=60)
+        r.raise_for_status()
+        wanted = {f"arxiv:{i}" for i in chunk}
+        out += [it for it in parse_feed(r.text, datetime(1990, 1, 1, tzinfo=timezone.utc)) if it.key in wanted]
+    return out

@@ -1,8 +1,11 @@
-"""DeepSeek (OpenAI-compatible Chat Completions) scoring.
+"""LLM scoring via any OpenAI-compatible Chat Completions API (default: Kimi / Moonshot).
 
-Docs: https://api-docs.deepseek.com/ . As of the V4 release the legacy names
-`deepseek-chat` / `deepseek-reasoner` were retired; the default here is
-`deepseek-flash` and is validated against GET /models at startup.
+Kimi docs: https://platform.kimi.ai/docs/api/overview
+- base_url https://api.moonshot.ai/v1, JSON mode via response_format=json_object.
+- kimi-k2.6: thinking optional; temperature is fixed by the server (1.0 thinking / 0.6 non-thinking)
+  and other values are rejected, so we never send `temperature`.
+- kimi-k3*: always thinks, rejects the `thinking` field -> LLM_THINKING=omit (set automatically).
+The configured model is validated against GET /models at startup.
 """
 from __future__ import annotations
 
@@ -18,7 +21,7 @@ from .models import Item
 log = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """Ты — эксперт по 3D Gaussian Splatting (3DGS), нейронному рендерингу и фотограмметрии.
-Ты оцениваешь новые статьи/посты для инженера, которого интересует тема:
+Ты оцениваешь новые записи (статьи, релизы инструментов, новости индустрии, посты сообщества) для инженера, которого интересует тема:
 «3DGS для дронов и реконструкции интерьеров».
 
 Что считается релевантным:
@@ -39,6 +42,17 @@ SYSTEM_PROMPT = """Ты — эксперт по 3D Gaussian Splatting (3DGS), н
 - 1–3: 3DGS, но другая область (аватары, люди, генерация объектов, медицина, автономные авто без переноса).
 - 0: не про 3DGS / не статья / шум.
 Не завышай оценки. Большинство статей должно получать 1–6.
+
+Тип записи указан в поле «Тип»:
+- paper: научная статья — оценивай по шкале выше.
+- tool: релиз библиотеки/программы, новый репозиторий, модель/Space на Hugging Face. Оценивай практическую
+  пользу для пайплайна «съёмка с дрона/в помещении → 3DGS → меш/просмотр». Крупный релиз gsplat/COLMAP/
+  просмотрщика с важными фичами — 6–8; багфикс-релиз — 2–4; заброшенный/игрушечный репозиторий — 0–2.
+- industry: новость компании/продукта (DJI, Pix4D, Matterport, XGRIDS и т.п.). 8–10 — продукт с 3DGS для
+  дронов/интерьеров; 4–6 — смежное (фотограмметрия, LiDAR-сканеры) без 3DGS; 0–2 — маркетинг без сути.
+- community: пост/обсуждение (Reddit, HN, Bluesky). Ценно: сравнения инструментов, практический опыт съёмки
+  с дронов и в помещениях, воркфлоу. Шоукейс «посмотрите мой сплат» без деталей — 0–2.
+Для не-статей is_paper=false.
 
 Отвечай ТОЛЬКО валидным JSON-объектом такого вида:
 {
@@ -104,7 +118,14 @@ class Analysis:
 
 
 def build_user_prompt(item: Item) -> str:
-    parts = [f"Заголовок: {item.title}", f"Источники: {', '.join(item.sources)}", f"URL: {item.url}"]
+    parts = [
+        f"Тип: {item.kind}",
+        f"Заголовок: {item.title}",
+        f"Источники: {', '.join(item.sources)}",
+        f"URL: {item.url}",
+    ]
+    if item.extra.get("venue"):
+        parts.append(f"Площадка: {item.extra['venue']}")
     if item.extra.get("arxiv_category"):
         parts.append(f"Категория arXiv: {item.extra['arxiv_category']}")
     if item.extra.get("arxiv_comment"):
@@ -114,39 +135,50 @@ def build_user_prompt(item: Item) -> str:
     return "\n".join(parts)
 
 
-class DeepSeekClient:
-    def __init__(self, client: httpx.AsyncClient, api_key: str, model: str, base_url: str):
+class LLMClient:
+    def __init__(
+        self,
+        client: httpx.AsyncClient,
+        api_key: str,
+        model: str,
+        base_url: str,
+        thinking: str = "disabled",
+        max_tokens: int = 1500,
+    ):
         self.client = client
         self.model = model
         self.base_url = base_url
+        self.thinking = thinking
+        self.max_tokens = max_tokens
         self.headers = {"Authorization": f"Bearer {api_key}"}
+        self.usage = {"prompt_tokens": 0, "completion_tokens": 0}
 
     async def check_model(self) -> None:
         """Fail fast with a clear message if the configured model ID does not exist."""
         r = await self.client.get(f"{self.base_url}/models", headers=self.headers, timeout=30)
         if r.status_code == 401:
-            raise SystemExit("DeepSeek: неверный DEEPSEEK_API_KEY (401)")
+            raise SystemExit("LLM: неверный LLM_API_KEY (401)")
         r.raise_for_status()
         ids = [m.get("id") for m in r.json().get("data", [])]
         if self.model not in ids:
             raise SystemExit(
-                f"DeepSeek: модели {self.model!r} нет в /models. Доступные: {ids}. Задайте DEEPSEEK_MODEL."
+                f"LLM: модели {self.model!r} нет в /models. Доступные: {ids}. Задайте LLM_MODEL."
             )
-        log.info("DeepSeek models: %s (using %s)", ids, self.model)
+        log.info("LLM models: %s (using %s)", ids, self.model)
 
     async def analyze(self, item: Item, retries: int = 3) -> Analysis:
-        payload = {
+        payload: dict = {
             "model": self.model,
             "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": build_user_prompt(item)},
             ],
             "response_format": {"type": "json_object"},
-            # Thinking adds latency/cost and isn't needed for scoring an abstract.
-            "thinking": {"type": "disabled"},
-            "temperature": 0.2,
-            "max_tokens": 1200,
+            "max_tokens": self.max_tokens,
         }
+        if self.thinking == "disabled":
+            # Thinking adds latency/cost and isn't needed for scoring an abstract.
+            payload["thinking"] = {"type": "disabled"}
         last_err: Exception | None = None
         for attempt in range(1, retries + 1):
             try:
@@ -160,9 +192,12 @@ class DeepSeekClient:
                     payload.pop("thinking")
                     raise ValueError(f"400, retrying without thinking param: {r.text[:200]}")
                 r.raise_for_status()
-                content = r.json()["choices"][0]["message"].get("content") or ""
+                data = r.json()
+                for k in self.usage:
+                    self.usage[k] += int((data.get("usage") or {}).get(k) or 0)
+                content = data["choices"][0]["message"].get("content") or ""
                 if not content.strip():
-                    raise ValueError("empty content")  # known DeepSeek JSON-mode quirk
+                    raise ValueError("empty content (max_tokens too low for a thinking model?)")
                 return Analysis.from_json(json.loads(content))
             except (httpx.HTTPError, ValueError, KeyError, json.JSONDecodeError) as e:
                 last_err = e

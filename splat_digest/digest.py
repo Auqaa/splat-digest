@@ -4,10 +4,25 @@ from datetime import date
 from html import escape
 
 from .llm import Analysis
-from .models import Item
+from .models import COMMUNITY, INDUSTRY, PAPER, TOOL, Item
 from .telegram import LIMIT
 
 PV = {"high": "высокая", "medium": "средняя", "low": "низкая"}
+SECTIONS = [
+    (PAPER, "📄 Статьи"),
+    (TOOL, "🛠 Инструменты и код"),
+    (INDUSTRY, "🏭 Индустрия и продукты"),
+    (COMMUNITY, "💬 Сообщество"),
+]
+# (extra key for url, label, extra key for counter, counter symbol)
+LINKS = [
+    ("code_url", "код", "gh_stars", "★"),
+    ("hf_url", "HF", "hf_upvotes", "▲"),
+    ("s2_url", "S2", "citations", "цит."),
+    ("hn_url", "HN", "hn_points", "▲"),
+    ("reddit_url", "Reddit", None, ""),
+    ("bsky_url", "Bluesky", "bsky_likes", "♥"),
+]
 
 
 def _bar(score: int) -> str:
@@ -20,17 +35,17 @@ def render_item(item: Item, a: Analysis) -> str:
         flags.append("🚁 дроны")
     if a.indoor_relevant:
         flags.append("🏠 интерьеры")
-    if a.code_available:
+    if a.code_available or item.extra.get("code_url"):
         flags.append("💻 код")
-    if not a.is_paper:
-        flags.append("📰 не статья")
+    if item.extra.get("venue"):
+        flags.append(f"🏛 {escape(item.extra['venue'][:60])}")
     links = [f'<a href="{escape(item.url, quote=True)}">источник</a>']
-    if item.extra.get("hf_url"):
-        up = item.extra.get("hf_upvotes")
-        links.append(f'<a href="{escape(item.extra["hf_url"], quote=True)}">HF{f" ▲{up}" if up else ""}</a>')
-    if item.extra.get("hn_url"):
-        pts = item.extra.get("hn_points")
-        links.append(f'<a href="{escape(item.extra["hn_url"], quote=True)}">HN{f" ▲{pts}" if pts else ""}</a>')
+    for url_key, label, cnt_key, sym in LINKS:
+        u = item.extra.get(url_key)
+        if not u or u == item.url:
+            continue
+        cnt = item.extra.get(cnt_key) if cnt_key else None
+        links.append(f'<a href="{escape(u, quote=True)}">{label}{f" {sym}{cnt}" if cnt else ""}</a>')
 
     lines = [
         f"<b>{a.relevance}/10</b> {_bar(a.relevance)}  <b>{escape(item.title)}</b>",
@@ -67,11 +82,19 @@ def build_digest(
     for n in notes or []:
         header += f"\n⚠️ {escape(n)}"
     blocks = [header]
-    blocks += [render_item(i, a) for i, a in top]
+    for kind, title in SECTIONS:
+        sec = [p for p in top if p[0].kind == kind]
+        if not sec:
+            continue
+        rendered = [render_item(i, a) for i, a in sec]
+        # Glue the section title to its first item so a message never ends with a bare title.
+        blocks.append(f"<b>{title} ({len(sec)})</b>\n\n{rendered[0]}")
+        blocks += rendered[1:]
     if rest:
         tail = [f"<b>Ниже порога ({len(rest)}):</b>"]
         for i, a in rest[:25]:
-            tail.append(f'{a.relevance} · <a href="{escape(i.url, quote=True)}">{escape(i.title[:120])}</a>')
+            icon = dict(zip((PAPER, TOOL, INDUSTRY, COMMUNITY), "📄🛠🏭💬")).get(i.kind, "")
+            tail.append(f'{a.relevance} {icon} <a href="{escape(i.url, quote=True)}">{escape(i.title[:120])}</a>')
         if len(rest) > 25:
             tail.append(f"…и ещё {len(rest) - 25}")
         blocks.append("\n".join(tail))

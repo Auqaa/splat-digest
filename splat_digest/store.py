@@ -26,6 +26,18 @@ class Store:
                 sent_at TEXT
             )"""
         )
+        self.db.execute("CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT)")
+        self.db.commit()
+
+    def get_kv(self, k: str):
+        row = self.db.execute("SELECT v FROM kv WHERE k=?", (k,)).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def set_kv(self, k: str, v) -> None:
+        self.db.execute(
+            "INSERT INTO kv(k, v) VALUES (?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v",
+            (k, json.dumps(v, ensure_ascii=False)),
+        )
         self.db.commit()
 
     def sent_keys(self, keys: list[str]) -> set[str]:

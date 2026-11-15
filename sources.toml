@@ -1,0 +1,73 @@
+# Настройки источников. Включение/выключение целиком — переменной SOURCES (через запятую).
+# URL'ы сайтов компаний НЕ ПРОВЕРЕНЫ (из среды разработки сеть была закрыта):
+# запустите `splat-digest check-sources` и поправьте то, что ❌ или ПУСТО.
+
+[s2]
+lookback_days = 21          # S2 индексирует конференционные статьи с задержкой
+query = '"gaussian splatting" | "gaussian splats" | 3DGS'
+max_items = 100
+
+[openreview]
+lookback_days = 14
+terms = ["gaussian splatting"]
+
+[github_releases]
+lookback_days = 7
+# Проверено через GitHub search 15.11.2026: все существуют и живые (glomap в архиве, nerfstudio заброшен).
+repos = [
+  "nerfstudio-project/gsplat",
+  "colmap/colmap",
+  "WebODM/OpenSplat",
+  "OpenDroneMap/ODM",
+  "ArthurBrussee/brush",
+  "playcanvas/supersplat",
+  "MrNeRF/LichtFeld-Studio",
+  "aras-p/UnityGaussianSplatting",
+  "sparkjsdev/spark",
+]
+
+[github_repos]
+created_within_days = 14
+min_stars = 15
+queries = ['"gaussian splatting"', "3dgs", "topic:gaussian-splatting"]
+
+[awesome]
+# Новые статьи в курируемом списке MrNeRF (YAML с полями paper/code/tags; ~500 arXiv-статей на 15.11.2026).
+# Первый запуск только запоминает текущее состояние. Подходит и markdown — берутся все arXiv-ссылки.
+urls = [
+  "https://raw.githubusercontent.com/MrNeRF/awesome-3D-gaussian-splatting/main/awesome_3dgs_papers.yaml",
+]
+
+[hf_hub]
+kinds = ["spaces", "models"]
+terms = ["gaussian-splatting", "gaussian splatting", "3dgs", "gsplat"]
+min_likes = 0
+max_items = 20
+
+[reddit]
+subreddits = [
+  { name = "GaussianSplatting", filter = false, max_items = 25 },
+  { name = "photogrammetry", filter = true },
+  { name = "UAVmapping", filter = true },
+]
+
+[bluesky]
+queries = ["gaussian splatting", "3DGS"]
+min_likes = 5
+
+# type = "rss": лента; type = "links": следим за новыми ссылками на странице-списке,
+# link_pattern — regex для ссылок на статьи/посты. all = true — не фильтровать по ключевым словам.
+# kind: industry (по умолчанию) | tool | community | paper
+[vendors]
+sites = [
+  { name = "RadianceFields", type = "links", url = "https://radiancefields.com/", link_pattern = 'radiancefields\.com/[a-z0-9-]{12,}/?$', all = true },
+  { name = "PlayCanvas", type = "rss", url = "https://blog.playcanvas.com/rss/", kind = "tool" },
+  { name = "DJI Enterprise", type = "links", url = "https://enterprise.dji.com/news", link_pattern = '/news/detail/' },
+  { name = "Pix4D", type = "links", url = "https://www.pix4d.com/blog", link_pattern = '/blog/[a-z0-9-]{8,}' },
+  { name = "Skydio", type = "links", url = "https://www.skydio.com/blog", link_pattern = '/blog/[a-z0-9-]{8,}' },
+  { name = "Agisoft", type = "links", url = "https://www.agisoft.com/about/news/", link_pattern = 'agisoft\.com/.*news' },
+  { name = "XGRIDS", type = "links", url = "https://www.xgrids.com/news", link_pattern = '/news/' },
+  { name = "Matterport", type = "links", url = "https://matterport.com/news", link_pattern = '/news/[a-z0-9-]{8,}' },
+  { name = "Polycam", type = "links", url = "https://poly.cam/blog", link_pattern = '/blog/[a-z0-9-]{6,}' },
+  { name = "Niantic Spatial", type = "links", url = "https://www.nianticspatial.com/blog", link_pattern = '/blog/[a-z0-9-]{6,}' },
+]
