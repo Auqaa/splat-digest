@@ -19,17 +19,17 @@ concurrency:
 
 jobs:
   digest:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04   # закреплено: ubuntu-latest переезжает на 26.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: pip install .
 
       # State (SQLite) lives in the Actions cache: restore the latest, save a new one each run.
-      - uses: actions/cache/restore@v4
+      - uses: actions/cache/restore@v5
         with:
           path: data
           key: state-${{ github.run_id }}
@@ -52,8 +52,10 @@ jobs:
           MIN_RELEVANCE: ${{ vars.MIN_RELEVANCE }}
           SOURCES: ${{ vars.SOURCES }}
 
-      - uses: actions/cache/save@v4
-        if: always()
+      # Сохраняем только если база есть: check-sources её не создаёт. Пустой кэш нельзя сохранять —
+      # он стал бы «самым свежим», и следующий run забыл бы всё отправленное.
+      - uses: actions/cache/save@v5
+        if: always() && hashFiles('data/state.db') != ''
         with:
           path: data
           key: state-${{ github.run_id }}
