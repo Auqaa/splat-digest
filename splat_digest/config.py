@@ -50,6 +50,8 @@ class Config:
     llm_concurrency: int = 4
     state_path: str = "data/state.db"
     send_empty_digest: bool = True
+    # >0: skip the run if a digest was delivered within this many hours (backup cron triggers).
+    min_hours_between: float = 0
     sources: tuple[str, ...] = ALL_SOURCES
     sources_file: str = "sources.toml"
     github_token: str = ""
@@ -102,6 +104,7 @@ class Config:
             llm_concurrency=int(e.get("LLM_CONCURRENCY") or cls.llm_concurrency),
             state_path=e.get("STATE_PATH") or cls.state_path,
             send_empty_digest=(e.get("SEND_EMPTY_DIGEST", "1") not in ("0", "false", "no")),
+            min_hours_between=float(e.get("MIN_HOURS_BETWEEN") or 0),
             sources=srcs,
             sources_file=sources_file,
             github_token=e.get("GITHUB_TOKEN", ""),

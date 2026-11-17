@@ -429,3 +429,20 @@ async def test_generation_error_with_http_200_is_retried(world):
     w.gen_error_once = True
     await main.run(cfg)
     assert "не обработано LLM" not in w.tg_messages[0]["text"]
+
+
+async def test_backup_cron_skips_if_recently_sent(world):
+    w, cfg = world
+    from dataclasses import replace
+    sched = replace(cfg, min_hours_between=12)
+    await main.run(sched)
+    n_msgs, n_llm = len(w.tg_messages), w.llm_calls
+    assert n_msgs >= 1
+    await main.run(sched)                      # backup trigger the same day: nothing happens
+    assert len(w.tg_messages) == n_msgs and w.llm_calls == n_llm
+    await main.run(cfg)                        # manual run is never skipped
+    assert len(w.tg_messages) == n_msgs + 1
+    s = Store(cfg.state_path)
+    s.set_kv(main.LAST_DIGEST_KV, (datetime.now(timezone.utc) - timedelta(hours=13)).isoformat())
+    await main.run(sched)                      # next day: sends again
+    assert len(w.tg_messages) == n_msgs + 2

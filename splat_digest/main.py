@@ -146,8 +146,25 @@ def select_new(items: list[Item], store: Store, cap: int) -> tuple[list[Item], l
     return new, notes
 
 
+LAST_DIGEST_KV = "last_digest_at"
+
+
+def recently_sent(store: Store, hours: float) -> bool:
+    last = store.get_kv(LAST_DIGEST_KV)
+    if not (hours > 0 and last):
+        return False
+    age = datetime.now(timezone.utc) - datetime.fromisoformat(last)
+    return age.total_seconds() < hours * 3600
+
+
 async def run(cfg: Config, dry_run: bool = False) -> int:
     store = Store(cfg.state_path)
+    if not dry_run and recently_sent(store, cfg.min_hours_between):
+        # Backup cron triggers: GitHub delays or drops scheduled runs, so several are configured;
+        # the first one that actually runs sends the digest, the rest exit here.
+        log.info("digest already sent at %s (< %sh ago) — skipping", store.get_kv(LAST_DIGEST_KV),
+                 cfg.min_hours_between)
+        return 0
     async with _client() as client:
         llm = LLMClient(client, cfg.llm_api_key, cfg.llm_model, cfg.llm_base_url, cfg.llm_thinking,
                         cfg.llm_max_tokens)
@@ -163,6 +180,7 @@ async def run(cfg: Config, dry_run: bool = False) -> int:
 
         if not new and not cfg.send_empty_digest:
             ctx.commit_kv()
+            store.set_kv(LAST_DIGEST_KV, datetime.now(timezone.utc).isoformat())
             return 0
 
         scored, failed = await score_all(llm, store, new, cfg.llm_concurrency)
@@ -178,6 +196,7 @@ async def run(cfg: Config, dry_run: bool = False) -> int:
         # Failed-LLM items are NOT marked sent: they will be retried next run.
         store.mark_sent([i.key for i, _ in scored])
         ctx.commit_kv()
+        store.set_kv(LAST_DIGEST_KV, datetime.now(timezone.utc).isoformat())
         log.info("sent %d messages, %d items", len(chunks), len(scored))
     return 0
 
