@@ -68,7 +68,12 @@ async def fetch(ctx: Ctx) -> list[Item]:
     r = await client.get(API_URL, params=params, timeout=60)
     r.raise_for_status()
     items = parse_feed(r.text, since)
-    log.info("arXiv: %d items since %s", len(items), since.date())
+    # Diagnostics: total matches for the query and the date range actually returned.
+    root = ET.fromstring(r.text)
+    total = root.findtext("{http://a9.com/-/spec/opensearch/1.1/}totalResults")
+    dates = sorted(e.findtext("a:published", "", NS)[:10] for e in root.findall("a:entry", NS))
+    log.info("arXiv: %d items since %s (query total=%s, returned=%d, dates %s..%s)", len(items), since.date(),
+             total, len(dates), dates[0] if dates else "-", dates[-1] if dates else "-")
     if len(items) >= max_results:
         log.warning("arXiv: hit max_results=%d, some papers may be missing", max_results)
     return items
