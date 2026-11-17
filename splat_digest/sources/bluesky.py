@@ -52,6 +52,10 @@ def parse(posts: list[dict], min_likes: int) -> list[Item]:
 
 async def fetch(ctx: Ctx) -> list[Item]:
     conf = ctx.conf("bluesky")
+    if not (ctx.cfg.bluesky_handle and ctx.cfg.bluesky_app_password):
+        # Public search requires auth now; don't put a warning in every digest for an optional source.
+        log.info("Bluesky: skipped (no BLUESKY_HANDLE / BLUESKY_APP_PASSWORD)")
+        return []
     base, headers = await _auth(ctx)
     since = ctx.since().strftime("%Y-%m-%dT%H:%M:%SZ")
     out: dict[str, Item] = {}

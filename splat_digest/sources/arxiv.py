@@ -51,9 +51,13 @@ def parse_feed(xml_text: str, since: datetime) -> list[Item]:
     return items
 
 
-async def fetch(ctx: Ctx, max_results: int = 200) -> list[Item]:
+async def fetch(ctx: Ctx) -> list[Item]:
+    # `published` is the v1 submission time, but papers are announced 1–4 days later (weekends!).
+    # A short window by `published` silently drops them, so look back a week; the sent-set dedupes.
+    conf = ctx.conf("arxiv")
+    max_results = conf.get("max_results", 500)
     client = ctx.client
-    since = ctx.since()
+    since = ctx.since(conf.get("lookback_days", 7))
     params = {
         "search_query": QUERY,
         "sortBy": "submittedDate",

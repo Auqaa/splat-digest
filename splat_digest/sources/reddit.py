@@ -1,6 +1,7 @@
 """Reddit via public RSS. Reddit often returns 403 to datacenter IPs (incl. GitHub Actions)."""
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from ..models import COMMUNITY, Item, is_on_topic, make_key
@@ -14,9 +15,15 @@ async def fetch(ctx: Ctx) -> list[Item]:
     since = ctx.since()
     items: list[Item] = []
     errors = []
-    for sub in conf.get("subreddits", [{"name": "GaussianSplatting", "filter": False}]):
+    for i, sub in enumerate(conf.get("subreddits", [{"name": "GaussianSplatting", "filter": False}])):
         name, need_kw = sub["name"], sub.get("filter", True)
-        r = await ctx.client.get(f"https://www.reddit.com/r/{name}/new/.rss", params={"limit": 100}, timeout=30)
+        url = f"https://www.reddit.com/r/{name}/new/.rss"
+        for attempt in range(3):
+            if i or attempt:
+                await asyncio.sleep(conf.get("delay_seconds", 6) * (attempt + 1))  # Reddit 429s quick bursts
+            r = await ctx.client.get(url, params={"limit": 100}, timeout=30)
+            if r.status_code != 429:
+                break
         if r.status_code in (403, 429):
             errors.append(f"r/{name}: HTTP {r.status_code}")
             continue

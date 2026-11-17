@@ -1,6 +1,11 @@
 # Настройки источников. Включение/выключение целиком — переменной SOURCES (через запятую).
-# URL'ы сайтов компаний НЕ ПРОВЕРЕНЫ (из среды разработки сеть была закрыта):
-# запустите `splat-digest check-sources` и поправьте то, что ❌ или ПУСТО.
+# Сайты компаний проверены check-sources 17.11.2026 из GitHub Actions: все ниже отдают ссылки.
+# Убраны: PlayCanvas RSS (404; релизы SuperSplat и так идут из GitHub), Agisoft (404).
+
+[arxiv]
+# arXiv объявляет статьи через 1–4 дня после подачи, поэтому окно — неделя (повторы отсекаются базой).
+lookback_days = 7
+max_results = 500
 
 [s2]
 lookback_days = 21          # S2 индексирует конференционные статьи с задержкой
@@ -45,6 +50,7 @@ min_likes = 0
 max_items = 20
 
 [reddit]
+delay_seconds = 6           # пауза между сабреддитами: без неё Reddit отвечает 429
 subreddits = [
   { name = "GaussianSplatting", filter = false, max_items = 25 },
   { name = "photogrammetry", filter = true },
@@ -61,11 +67,9 @@ min_likes = 5
 [vendors]
 sites = [
   { name = "RadianceFields", type = "links", url = "https://radiancefields.com/", link_pattern = 'radiancefields\.com/[a-z0-9-]{12,}/?$', all = true },
-  { name = "PlayCanvas", type = "rss", url = "https://blog.playcanvas.com/rss/", kind = "tool" },
   { name = "DJI Enterprise", type = "links", url = "https://enterprise.dji.com/news", link_pattern = '/news/detail/' },
   { name = "Pix4D", type = "links", url = "https://www.pix4d.com/blog", link_pattern = '/blog/[a-z0-9-]{8,}' },
   { name = "Skydio", type = "links", url = "https://www.skydio.com/blog", link_pattern = '/blog/[a-z0-9-]{8,}' },
-  { name = "Agisoft", type = "links", url = "https://www.agisoft.com/about/news/", link_pattern = 'agisoft\.com/.*news' },
   { name = "XGRIDS", type = "links", url = "https://www.xgrids.com/news", link_pattern = '/news/' },
   { name = "Matterport", type = "links", url = "https://matterport.com/news", link_pattern = '/news/[a-z0-9-]{8,}' },
   { name = "Polycam", type = "links", url = "https://poly.cam/blog", link_pattern = '/blog/[a-z0-9-]{6,}' },
