@@ -108,3 +108,49 @@ GitHub Secrets.
 
 Список репозиториев и сайтов компаний лежит в файле `sources.toml`. Его можно править прямо на GitHub:
 откройте файл, нажмите ✏️ и затем **Commit changes**.
+
+---
+
+## Надёжный ежедневный запуск через cron-job.org (рекомендуется)
+
+Встроенное расписание GitHub ненадёжно: за первые два дня из ожидаемых запусков сработал один, и тот на
+8,5 часа позже. Бесплатный сервис **cron-job.org** в нужное время сам нажимает «Run workflow» через
+API GitHub. Настройка займёт около 10 минут.
+
+### А. Токен GitHub (только для запуска этого workflow)
+1. На GitHub нажмите на аватар (справа вверху) и откройте **Settings → Developer settings → Personal access tokens →
+   Fine-grained tokens → Generate new token**.
+2. Заполните поля:
+   - **Token name**: `splat-digest-cron`
+   - **Expiration**: максимальный срок (до года). Запишите в календарь, когда токен истекает: после этой даты запуски молча прекратятся.
+   - **Repository access**: **Only select repositories** → `Auqaa/splat-digest`
+   - **Permissions → Repository permissions → Actions**: **Read and write** (остальное не трогайте)
+3. Нажмите **Generate token** и скопируйте `github_pat_...`. Его показывают один раз.
+   Этот токен может запускать workflow только в этом репозитории, но всё равно не показывайте его никому.
+
+### Б. Задание на cron-job.org
+1. Зарегистрируйтесь на https://cron-job.org и нажмите **Create cronjob**.
+2. Вкладка **Common**:
+   - **Title**: `splat-digest`
+   - **URL**: `https://api.github.com/repos/Auqaa/splat-digest/actions/workflows/digest.yml/dispatches`
+   - **Execution schedule**: каждый день, 07:30, часовой пояс Europe/Moscow
+3. Вкладка **Advanced**:
+   - **Request method**: `POST`
+   - **Headers** (добавьте три):
+     | Key | Value |
+     |---|---|
+     | `Authorization` | `Bearer github_pat_...` (ваш токен, после слова Bearer пробел) |
+     | `Accept` | `application/vnd.github+json` |
+     | `Content-Type` | `application/json` |
+   - **Request body**:
+     ```json
+     {"ref":"claude/gracious-darwin-tzrcdt","inputs":{"command":"run","min_hours_between":"12"}}
+     ```
+4. Нажмите **Test run**. Ответ **204** означает успех: в **Actions** на GitHub появится запуск, а через пару минут придёт дайджест.
+   - **401**: токен неверный или истёк.
+   - **403** / **404**: у токена нет прав Actions: Read and write, или он выдан не на этот репозиторий.
+   - **422**: опечатка в теле запроса (имя ветки).
+5. Сохраните задание кнопкой **Create**.
+
+Встроенное расписание GitHub можно оставить как страховку: благодаря `min_hours_between` дайджест всё равно
+придёт один раз в день.
