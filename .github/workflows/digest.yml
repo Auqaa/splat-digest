@@ -15,6 +15,10 @@ on:
         type: choice
         options: [run, seed, dry-run, check-sources]
         default: run
+      min_hours_between:
+        description: "Пропустить запуск, если дайджест уже был отправлен меньше N часов назад (0 — не пропускать). Внешний будильник передаёт 12."
+        type: string
+        default: "0"
 
 concurrency:
   group: digest
@@ -54,7 +58,7 @@ jobs:
           LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
           MIN_RELEVANCE: ${{ vars.MIN_RELEVANCE }}
           SOURCES: ${{ vars.SOURCES }}
-          MIN_HOURS_BETWEEN: ${{ github.event_name == 'schedule' && '12' || '0' }}
+          MIN_HOURS_BETWEEN: ${{ github.event_name == 'schedule' && '12' || inputs.min_hours_between || '0' }}
 
       # Сохраняем только если база есть: check-sources её не создаёт. Пустой кэш нельзя сохранять —
       # он стал бы «самым свежим», и следующий run забыл бы всё отправленное.
