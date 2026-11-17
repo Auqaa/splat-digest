@@ -168,6 +168,8 @@ class FakeWorld:
 
     def handler(self, req: httpx.Request) -> httpx.Response:
         u = str(req.url)
+        if "rss.arxiv.org" in u:
+            return httpx.Response(200, text="<rss version='2.0'><channel></channel></rss>")
         if "export.arxiv.org" in u and "id_list" in u:
             xml = arxiv_xml().replace("2611.05555", "2611.08888").replace("GaussAvatar: Animatable Human Avatars",
                                                                           "Curated Indoor GS")
@@ -446,3 +448,29 @@ async def test_backup_cron_skips_if_recently_sent(world):
     s.set_kv(main.LAST_DIGEST_KV, (datetime.now(timezone.utc) - timedelta(hours=13)).isoformat())
     await main.run(sched)                      # next day: sends again
     assert len(w.tg_messages) == n_msgs + 2
+
+
+ARXIV_RSS = """<?xml version='1.0' encoding='UTF-8'?>
+<rss xmlns:arxiv="http://arxiv.org/schemas/atom" xmlns:dc="http://purl.org/dc/elements/1.1/" version="2.0">
+<channel><title>cs.CV updates on arXiv.org</title>
+<item><title>DroneSplat: Gaussian Splatting from UAV Video</title><link>https://arxiv.org/abs/2611.12345</link>
+<description>arXiv:2611.12345v1 Announce Type: new
+Abstract: We reconstruct large aerial scenes with 3DGS.</description>
+<category>cs.CV</category><category>cs.RO</category><pubDate>Tue, 17 Nov 2026 00:00:00 -0500</pubDate>
+<arxiv:announce_type>new</arxiv:announce_type><dc:creator>A. Pilot, B. Coder</dc:creator></item>
+<item><title>Old 3DGS paper v3</title><link>https://arxiv.org/abs/2401.00001</link>
+<description>arXiv:2401.00001v3 Announce Type: replace
+Abstract: gaussian splatting revisited</description><arxiv:announce_type>replace</arxiv:announce_type></item>
+<item><title>A transformer for segmentation</title><link>https://arxiv.org/abs/2611.99999</link>
+<description>arXiv:2611.99999v1 Announce Type: cross
+Abstract: Not about splats.</description><arxiv:announce_type>cross</arxiv:announce_type></item>
+</channel></rss>"""
+
+
+def test_arxiv_rss_parse():
+    items = arxiv.parse_rss(ARXIV_RSS, {"new", "cross"})
+    assert [i.key for i in items] == ["arxiv:2611.12345"]
+    it = items[0]
+    assert it.abstract == "We reconstruct large aerial scenes with 3DGS."
+    assert it.authors == ["A. Pilot", "B. Coder"] and it.extra["arxiv_category"] == "cs.CV"
+    assert it.published.year == 2026

@@ -19,7 +19,7 @@ def _load_dotenv(path: str = ".env") -> None:
 
 
 ALL_SOURCES = (
-    "arxiv", "hf_daily", "hn", "s2", "openreview", "github_releases", "github_repos",
+    "arxiv_rss", "arxiv", "hf_daily", "hn", "s2", "openreview", "github_releases", "github_repos",
     "awesome", "hf_hub", "reddit", "bluesky", "vendors",
 )
 

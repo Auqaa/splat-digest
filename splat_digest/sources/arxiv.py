@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import logging
+import re
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 
 import httpx
 
-from ..models import PAPER, Item, arxiv_id_from
-from .base import Ctx
+from ..models import PAPER, Item, arxiv_id_from, is_on_topic
+from .base import Ctx, parse_dt
 
 log = logging.getLogger(__name__)
 
@@ -89,3 +90,57 @@ async def fetch_by_ids(client: httpx.AsyncClient, ids: list[str]) -> list[Item]:
         wanted = {f"arxiv:{i}" for i in chunk}
         out += [it for it in parse_feed(r.text, datetime(1990, 1, 1, tzinfo=timezone.utc)) if it.key in wanted]
     return out
+
+
+# --- Daily announcement RSS (rss.arxiv.org): what arXiv announced today, no search-index lag ----------
+RSS_URL = "https://rss.arxiv.org/rss/{cats}"
+ANNOUNCE_RE = re.compile(r"Announce Type:\s*([\w-]+)", re.I)
+ABSTRACT_RE = re.compile(r"Abstract:\s*(.*)", re.S | re.I)
+DC_CREATOR = "{http://purl.org/dc/elements/1.1/}creator"
+ARXIV_ANNOUNCE = "{http://arxiv.org/schemas/atom}announce_type"
+
+
+def parse_rss(xml_text: str, announce_types: set[str]) -> list[Item]:
+    root = ET.fromstring(xml_text)
+    items: list[Item] = []
+    for e in root.iter("item"):
+        link = (e.findtext("link") or "").strip()
+        aid = arxiv_id_from(link)
+        if not aid:
+            continue
+        desc = e.findtext("description") or ""
+        atype = (e.findtext(ARXIV_ANNOUNCE) or "").strip()
+        if not atype:
+            m = ANNOUNCE_RE.search(desc)
+            atype = m.group(1) if m else ""
+        if announce_types and atype.lower() not in announce_types:
+            continue  # skip "replace" (new versions of old papers)
+        title = " ".join((e.findtext("title") or "").split())
+        m = ABSTRACT_RE.search(desc)
+        abstract = " ".join((m.group(1) if m else desc).split())
+        if not is_on_topic(title, abstract):
+            continue
+        creators = e.findtext(DC_CREATOR) or ""
+        cats = [c.text for c in e.findall("category") if c.text]
+        items.append(Item(
+            key=f"arxiv:{aid}",
+            title=title,
+            url=f"https://arxiv.org/abs/{aid}",
+            abstract=abstract,
+            published=parse_dt(e.findtext("pubDate")),
+            authors=[a.strip() for a in creators.split(",") if a.strip()],
+            sources=["arxiv"],
+            extra={"arxiv_category": cats[0] if cats else ""},
+        ))
+    return items
+
+
+async def fetch_rss(ctx: Ctx) -> list[Item]:
+    conf = ctx.conf("arxiv_rss")
+    cats = "+".join(conf.get("categories", ["cs.CV", "cs.GR", "cs.RO"]))
+    types = {t.lower() for t in conf.get("announce_types", ["new", "cross"])}
+    r = await ctx.client.get(RSS_URL.format(cats=cats), timeout=60)
+    r.raise_for_status()
+    items = parse_rss(r.text, types)
+    log.info("arXiv RSS (%s): %d on-topic of %d announced", cats, len(items), r.text.count("<item>"))
+    return items

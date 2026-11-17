@@ -9,7 +9,8 @@ from .base import Ctx
 Fetcher = Callable[[Ctx], Awaitable[list[Item]]]
 
 REGISTRY: dict[str, tuple[str, Fetcher]] = {
-    "arxiv": ("arXiv", arxiv.fetch),
+    "arxiv_rss": ("arXiv RSS (сегодняшние объявления)", arxiv.fetch_rss),
+    "arxiv": ("arXiv API (поиск, страховка)", arxiv.fetch),
     "hf_daily": ("HF Daily Papers", hf.fetch),
     "hn": ("Hacker News", hn.fetch),
     "s2": ("Semantic Scholar", s2.fetch),
