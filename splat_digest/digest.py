@@ -47,14 +47,24 @@ def render_item(item: Item, a: Analysis) -> str:
         cnt = item.extra.get(cnt_key) if cnt_key else None
         links.append(f'<a href="{escape(u, quote=True)}">{label}{f" {sym}{cnt}" if cnt else ""}</a>')
 
+    deep = a.deep or {}
+    was = deep.get("relevance_abstract")
+    score = f"<b>{a.relevance}/10</b>" + (f" <i>(по аннотации {was})</i>" if was is not None else "")
     lines = [
-        f"<b>{a.relevance}/10</b> {_bar(a.relevance)}  <b>{escape(item.title)}</b>",
+        f"{score} {_bar(a.relevance)}  <b>{escape(item.title)}</b>",
         escape(a.summary_ru),
     ]
     if a.key_contribution:
         lines.append(f"<i>Вклад:</i> {escape(a.key_contribution)}")
     if a.relevance_reason:
         lines.append(f"<i>Почему {a.relevance}:</i> {escape(a.relevance_reason)}")
+    if deep:
+        lines.append("🔎 <i>По полному тексту:</i>")
+        for k, label in (("method_ru", "Метод"), ("datasets", "Данные"), ("results_ru", "Результаты"),
+                         ("compute", "Ресурсы"), ("limitations_ru", "Ограничения"),
+                         ("applicability_ru", "Для дронов/интерьеров")):
+            if deep.get(k):
+                lines.append(f"• <b>{label}:</b> {escape(str(deep[k])[:400])}")
     meta = [f"польза: {PV.get(a.practical_value, a.practical_value)}"] + flags
     if a.tags:
         meta.append(" ".join("#" + escape(t.replace(" ", "_").replace("-", "_")) for t in a.tags))

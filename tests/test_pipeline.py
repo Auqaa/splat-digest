@@ -159,6 +159,9 @@ class FakeWorld:
         self.vendor_page = VENDOR_PAGE_1
         self.awesome_ids = ["2601.00001"]
         self.llm_calls = 0
+        self.deep_calls = 0
+        self.deep_ok = True
+        self.gen_error_once = False
         self.tg_messages: list[dict] = []
         self.llm_fail_keys = set(llm_fail_keys)
         self.tg_fail = tg_fail
@@ -203,11 +206,29 @@ class FakeWorld:
             return httpx.Response(200, json=HF_JSON)
         if "hn.algolia.com" in u:
             return httpx.Response(200, json=HN_JSON)
-        if u.endswith("/v1/models"):
-            return httpx.Response(200, json={"data": [{"id": "kimi-k2.6"}, {"id": "kimi-k3"}]})
+        if u.endswith("/models"):
+            return httpx.Response(200, json={"data": [{"id": "deepseek-flash"}, {"id": "deepseek-v4-pro"}]})
+        if u.endswith("/chat/completions") and "tools" in json.loads(req.content):
+            body = json.loads(req.content)
+            self.deep_calls += 1
+            assert body["tools"] == [{"type": "deepseek_read_url"}] and "response_format" not in body
+            ok = self.deep_ok
+            call = {"kind": "read_link", "status": "completed" if ok else "failed",
+                    "action": {"type": "read_link", "url": "https://arxiv.org/html/x"}}
+            if not ok:
+                call["error"] = {"code": "url_not_accessible"}
+            content = "```json\n" + json.dumps({
+                "read_ok": True, "method_ru": "блочное обучение", "datasets": "Mill-19",
+                "limitations_ru": "не указано", "code_url": "https://github.com/x/fromtext",
+                "relevance_after_reading": 6}, ensure_ascii=False) + "\n```"
+            return httpx.Response(200, json={"choices": [{"finish_reason": "stop", "message": {
+                "content": content, "server_tool_calls": [{"index": 0, "calls": [call]}]}}]})
         if u.endswith("/chat/completions"):
             self.llm_calls += 1
             body = json.loads(req.content)
+            if self.gen_error_once:
+                self.gen_error_once = False
+                return httpx.Response(200, json={"error": {"message": "The model failed"}, "usage": {}})
             assert body["response_format"] == {"type": "json_object"}
             assert "temperature" not in body and body["thinking"] == {"type": "disabled"}
             user = body["messages"][1]["content"]
@@ -253,7 +274,7 @@ sites = [
 ]
 """)
     cfg = Config(llm_api_key="k", telegram_bot_token="t", telegram_chat_id="1",
-                 state_path=str(tmp_path / "s.db"), lookback_days=2, sources_conf=conf)
+                 state_path=str(tmp_path / "s.db"), lookback_days=2, sources_conf=conf, deep_read=False)
     return w, cfg
 
 
@@ -308,8 +329,8 @@ async def test_telegram_failure_does_not_mark_sent_but_caches_llm(world):
 async def test_bad_model_fails_fast(world):
     w, cfg = world
     from dataclasses import replace
-    with pytest.raises(SystemExit, match="kimi-k2-typo"):
-        await main.run(replace(cfg, llm_model="kimi-k2-typo"))
+    with pytest.raises(SystemExit, match="deepseek-chat"):
+        await main.run(replace(cfg, llm_model="deepseek-chat"))
     assert w.llm_calls == 0
 
 
@@ -344,13 +365,22 @@ async def test_failed_send_keeps_vendor_snapshot_uncommitted(world):
     assert "DJI Terra" in "\n".join(m["text"] for m in w.tg_messages)
 
 
-def test_config_k3_defaults(monkeypatch, tmp_path):
+def test_config_providers(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
-    for k in ("LLM_API_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"):
+    for k in ("LLM_API_KEY", "LLM_PROVIDER", "LLM_MODEL", "LLM_BASE_URL", "DEEP_READ", "SOURCES"):
+        monkeypatch.delenv(k, raising=False)
+    for k in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"):
         monkeypatch.setenv(k, "x")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "ds")  # alias accepted
+    c = Config.from_env()
+    assert (c.llm_provider, c.llm_model, c.llm_base_url, c.llm_thinking, c.llm_api_key, c.deep_read) == (
+        "deepseek", "deepseek-flash", "https://api.deepseek.com", "disabled", "ds", True)
+    monkeypatch.setenv("LLM_PROVIDER", "kimi")
+    monkeypatch.setenv("LLM_API_KEY", "km")
     monkeypatch.setenv("LLM_MODEL", "kimi-k3")
     c = Config.from_env()
-    assert c.llm_thinking == "omit" and c.llm_max_tokens == 8000
+    assert c.llm_base_url == "https://api.moonshot.ai/v1" and c.llm_thinking == "omit"
+    assert c.llm_max_tokens == 8000 and c.deep_read is False  # read_url is DeepSeek-only
     monkeypatch.setenv("SOURCES", "arxiv,bogus")
     with pytest.raises(SystemExit):
         Config.from_env()
@@ -372,3 +402,30 @@ def test_parse_awesome_yaml():
     e = parse_awesome(text)
     assert e["2609.25633"]["title"].startswith("Robust") and "code" not in e["2609.25633"]
     assert e["2610.11111"]["code"] == "https://github.com/x/indoor"
+
+
+async def test_deep_read_rescores_and_shows_fulltext(world):
+    w, cfg = world
+    from dataclasses import replace
+    await main.run(replace(cfg, deep_read=True, deep_read_min=7, deep_read_max=5))
+    text = "\n".join(m["text"] for m in w.tg_messages)
+    # Only AeroGS (9, arXiv) qualifies; IndoorSplat (7) is an S2/OpenReview item without arXiv ID.
+    assert w.deep_calls == 1
+    assert "6/10</b> <i>(по аннотации 9)</i>" in text
+    assert "По полному тексту" in text and "Mill-19" in text and "Ограничения" not in text
+
+
+async def test_deep_read_unread_page_is_ignored(world):
+    w, cfg = world
+    from dataclasses import replace
+    w.deep_ok = False
+    await main.run(replace(cfg, deep_read=True))
+    text = "\n".join(m["text"] for m in w.tg_messages)
+    assert w.deep_calls == 1 and "По полному тексту" not in text and "9/10" in text
+
+
+async def test_generation_error_with_http_200_is_retried(world):
+    w, cfg = world
+    w.gen_error_once = True
+    await main.run(cfg)
+    assert "не обработано LLM" not in w.tg_messages[0]["text"]

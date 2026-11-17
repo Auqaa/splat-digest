@@ -96,6 +96,39 @@ async def score_all(
     return [r for r in res if r], failed
 
 
+async def deep_read_top(
+    llm: LLMClient, store: Store, scored: list[tuple[Item, Analysis]], min_rel: int, cap: int, concurrency: int
+) -> int:
+    """Read full text of the most relevant new arXiv papers; re-score with what's actually in the paper."""
+    cands = [(i, a) for i, a in scored if i.key.startswith("arxiv:") and a.deep is None and a.relevance >= min_rel]
+    cands.sort(key=lambda p: -p[1].relevance)
+    sem = asyncio.Semaphore(concurrency)
+
+    async def one(it: Item, a: Analysis) -> bool:
+        async with sem:
+            deep = await llm.deep_read(it)
+        if not deep:
+            return False
+        after = deep.pop("relevance_after_reading", None)
+        try:
+            after = max(0, min(10, int(after)))
+        except (TypeError, ValueError):
+            after = None
+        if after is not None and after != a.relevance:
+            deep["relevance_abstract"] = a.relevance
+            a.relevance = after
+        if deep.get("code_url") and not it.extra.get("code_url"):
+            it.extra["code_url"] = deep["code_url"]
+            a.code_available = True
+        a.deep = deep
+        store.save_analysis(it.key, it.title, a.to_dict())
+        return True
+
+    res = await asyncio.gather(*(one(i, a) for i, a in cands[:cap]))
+    log.info("deep-read: %d/%d papers read", sum(res), len(cands[:cap]))
+    return sum(res)
+
+
 def _client() -> httpx.AsyncClient:
     return httpx.AsyncClient(headers={"User-Agent": UA}, follow_redirects=True)
 
@@ -133,6 +166,8 @@ async def run(cfg: Config, dry_run: bool = False) -> int:
             return 0
 
         scored, failed = await score_all(llm, store, new, cfg.llm_concurrency)
+        if cfg.deep_read and cfg.deep_read_max > 0:
+            await deep_read_top(llm, store, scored, cfg.deep_read_min, cfg.deep_read_max, cfg.llm_concurrency)
         log.info("LLM usage: %s", llm.usage)
         chunks = digest.build_digest(scored, cfg.min_relevance, datetime.now(timezone.utc).date(), failed, notes)
 
