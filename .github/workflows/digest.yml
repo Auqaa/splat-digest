@@ -5,7 +5,13 @@ on:
     # 04:23 UTC = 07:23 МСК: внутри окна off-peak DeepSeek (пик — 01–04 и 06–10 UTC по будням, вдвое дороже).
     # Cron в Actions опаздывает на 5–60 мин — запас до 06:00 есть.
     - cron: "23 4 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      command:
+        description: "seed — первый запуск (запомнить всё старое без отправки); dry-run — дайджест в лог; run — отправить"
+        type: choice
+        options: [run, seed, dry-run, check-sources]
+        default: run
 
 concurrency:
   group: digest
@@ -29,7 +35,8 @@ jobs:
           key: state-${{ github.run_id }}
           restore-keys: state-
 
-      - run: splat-digest run
+      # По расписанию — всегда run; при ручном запуске — выбранная команда.
+      - run: splat-digest ${{ inputs.command || 'run' }}
         env:
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           LLM_PROVIDER: ${{ vars.LLM_PROVIDER }}

@@ -56,6 +56,9 @@ JSON, который возвращает модель: `relevance` (0–10), `r
 Критерии оценки для каждого типа записи заданы в `SYSTEM_PROMPT` (`splat_digest/llm.py`).
 
 ## Первый запуск
+
+Пошаговая инструкция без установки на компьютер (Telegram + GitHub): **[SETUP.md](SETUP.md)**.
+Ниже — вариант для запуска локально.
 ```bash
 pip install -e .
 cp .env.example .env          # заполнить
